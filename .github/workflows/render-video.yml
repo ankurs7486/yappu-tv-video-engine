@@ -1,0 +1,38 @@
+name: Yappu TV Video Renderer
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Video topic"
+        required: true
+        default: "Can you find the hidden apple?"
+      duration:
+        description: "Video duration in seconds"
+        required: true
+        default: "20"
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create video
+        run: |
+          mkdir -p output
+
+          ffmpeg -y \
+            -f lavfi \
+            -i "color=c=0x6C5CE7:s=1080x1920:r=30" \
+            -t "${{ inputs.duration }}" \
+            -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='YAPPU TV':fontcolor=white:fontsize=90:x=(w-text_w)/2:y=180,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='${{ inputs.topic }}':fontcolor=white:fontsize=64:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.35:boxborderw=35" \
+            -c:v libx264 \
+            -pix_fmt yuv420p \
+            -movflags +faststart \
+            output/yappu-test.mp4
+
+      - name: Upload video
+        uses: actions/upload-artifact@v4
+        with:
+          name: yappu-video
+          path: output/yappu-test.mp4
