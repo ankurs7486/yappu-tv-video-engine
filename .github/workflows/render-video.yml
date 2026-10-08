@@ -20,33 +20,34 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg python3-pil
+          sudo apt-get install -y ffmpeg python3-pil espeak-ng
 
       - name: Create Yappu TV video
         env:
           TOPIC: ${{ inputs.topic }}
           DURATION: ${{ inputs.duration }}
         run: |
-          mkdir -p output frames
+          mkdir -p output frames audio
 
           python3 <<'PY'
           from PIL import Image, ImageDraw, ImageFont
           import os, random, math
 
           topic = os.environ.get("TOPIC", "Find the Hidden Apple")
-          duration = int(os.environ.get("DURATION", "20"))
-
           W, H = 1080, 1920
-          FPS = 30
 
           try:
-              font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 92)
-              font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 58)
-              font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 44)
+              font_big = ImageFont.truetype(
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 92)
+              font_medium = ImageFont.truetype(
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 58)
+              font_small = ImageFont.truetype(
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 44)
+              font_brand = ImageFont.truetype(
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 72)
           except:
-              font_big = font_medium = font_small = ImageFont.load_default()
+              font_big = font_medium = font_small = font_brand = ImageFont.load_default()
 
-          # Detect puzzle object from topic
           t = topic.lower()
 
           if "rainbow" in t:
@@ -65,137 +66,258 @@ jobs:
               target = "APPLE"
 
           colors = [
-              (255, 99, 132),
-              (54, 162, 235),
-              (255, 206, 86),
-              (75, 192, 192),
-              (153, 102, 255),
-              (255, 159, 64)
+              (255, 91, 120),
+              (70, 160, 255),
+              (255, 205, 70),
+              (70, 210, 170),
+              (170, 110, 255),
+              (255, 145, 70)
           ]
 
           def center_text(draw, text, y, font, fill):
-              box = draw.textbbox((0,0), text, font=font)
-              x = (W - (box[2]-box[0])) // 2
-              draw.text((x,y), text, font=font, fill=fill)
+              box = draw.textbbox((0, 0), text, font=font)
+              x = (W - (box[2] - box[0])) // 2
+              draw.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0))
+              draw.text((x, y), text, font=font, fill=fill)
+
+          def brand(draw, y=55):
+              text = "YAPPU TV"
+              box = draw.textbbox((0, 0), text, font=font_brand)
+              x = (W - (box[2] - box[0])) // 2
+
+              # Glow/shadow
+              draw.rounded_rectangle(
+                  (x-38, y-18, x+box[2]-box[0]+38, y+95),
+                  radius=45,
+                  fill=(255, 255, 255)
+              )
+
+              draw.text((x+3, y+3), text, font=font_brand, fill=(50, 50, 90))
+              draw.text((x, y), text, font=font_brand, fill=(255, 95, 145))
 
           def draw_object(draw, kind, x, y, size, muted=False):
               if kind == "APPLE":
-                  c = (235,235,235) if muted else (235,40,55)
+                  c = (220, 220, 220) if muted else (235, 45, 60)
                   draw.ellipse((x-size, y-size, x, y), fill=c)
                   draw.ellipse((x, y-size, x+size, y), fill=c)
-                  draw.rectangle((x-5, y-size-30, x+5, y-size+5), fill=(100,60,30))
-                  draw.ellipse((x+3, y-size-35, x+45, y-size-5), fill=(45,180,80))
+                  draw.rectangle(
+                      (x-5, y-size-30, x+5, y-size+5),
+                      fill=(100, 60, 30)
+                  )
+                  draw.ellipse(
+                      (x+3, y-size-35, x+45, y-size-5),
+                      fill=(45, 180, 80)
+                  )
 
               elif kind == "BALL":
-                  c = (235,235,235) if muted else (30,120,255)
-                  draw.ellipse((x-size,y-size,x+size,y+size), fill=c)
+                  c = (220, 220, 220) if muted else (40, 120, 255)
+                  draw.ellipse((x-size, y-size, x+size, y+size), fill=c)
 
               elif kind == "STAR":
-                  c = (235,235,235) if muted else (255,205,30)
-                  pts=[]
+                  c = (220, 220, 220) if muted else (255, 205, 30)
+                  pts = []
                   for i in range(10):
-                      a=-math.pi/2+i*math.pi/5
-                      r=size if i%2==0 else size*0.45
-                      pts.append((x+math.cos(a)*r,y+math.sin(a)*r))
+                      a = -math.pi/2 + i*math.pi/5
+                      r = size if i % 2 == 0 else size * 0.45
+                      pts.append((x + math.cos(a)*r, y + math.sin(a)*r))
                   draw.polygon(pts, fill=c)
 
               elif kind == "HEART":
-                  c = (235,235,235) if muted else (245,45,90)
-                  draw.ellipse((x-size,y-size//2,x,y+size),fill=c)
-                  draw.ellipse((x,y-size//2,x+size,y+size),fill=c)
-                  draw.polygon([(x-size+5,y),(x+size-5,y),(x,y+size+size//2)],fill=c)
+                  c = (220, 220, 220) if muted else (245, 45, 90)
+                  draw.ellipse(
+                      (x-size, y-size//2, x, y+size), fill=c)
+                  draw.ellipse(
+                      (x, y-size//2, x+size, y+size), fill=c)
+                  draw.polygon(
+                      [(x-size+5, y), (x+size-5, y),
+                       (x, y+size+size//2)], fill=c)
 
               elif kind == "PEN":
-                  c = (235,235,235) if muted else (40,90,220)
-                  draw.rounded_rectangle((x-size//4,y-size,x+size//4,y+size), radius=20, fill=c)
-                  draw.polygon([(x-size//4,y+size),(x+size//4,y+size),(x,y+size+50)], fill=c)
+                  c = (220, 220, 220) if muted else (40, 90, 220)
+                  draw.rounded_rectangle(
+                      (x-size//4, y-size, x+size//4, y+size),
+                      radius=20, fill=c
+                  )
+                  draw.polygon(
+                      [(x-size//4, y+size),
+                       (x+size//4, y+size),
+                       (x, y+size+50)], fill=c
+                  )
 
               elif kind == "DINO":
-                  c = (235,235,235) if muted else (55,190,100)
-                  draw.ellipse((x-size,y-size//2,x+size,y+size//2),fill=c)
-                  draw.ellipse((x+size//2,y-size,x+size*1.25,y-size//3),fill=c)
-                  draw.polygon([(x-size,y),(x-size-80,y-size//2),(x-size-60,y+40)],fill=c)
+                  c = (220, 220, 220) if muted else (55, 190, 100)
+                  draw.ellipse(
+                      (x-size, y-size//2, x+size, y+size//2), fill=c)
+                  draw.ellipse(
+                      (x+size//2, y-size,
+                       x+size*1.25, y-size//3), fill=c)
+                  draw.polygon(
+                      [(x-size, y),
+                       (x-size-80, y-size//2),
+                       (x-size-60, y+40)], fill=c)
 
               elif kind == "RAINBOW":
-                  rainbow = [(255,60,60),(255,150,40),(255,220,50),(70,190,90),(60,130,240),(150,80,220)]
-                  width=size//3
-                  for i,c in enumerate(rainbow):
-                      r=size-i*width//2
-                      draw.arc((x-r,y-r,x+r,y+r),180,360,fill=c,width=width)
+                  rainbow = [
+                      (255,60,60), (255,150,40), (255,220,50),
+                      (70,190,90), (60,130,240), (150,80,220)
+                  ]
+                  width = size//3
+                  for i, c in enumerate(rainbow):
+                      r = size - i*width//2
+                      draw.arc(
+                          (x-r, y-r, x+r, y+r),
+                          180, 360, fill=c, width=width
+                      )
 
-          # Scene 1: Hook
-          img = Image.new("RGB",(W,H),(30,25,70))
+          # ---------------- SCENE 1 ----------------
+          img = Image.new("RGB", (W, H), (35, 25, 85))
           d = ImageDraw.Draw(img)
 
-          for i in range(18):
-              x=random.randint(40,W-40)
-              y=random.randint(350,H-200)
-              r=random.randint(20,70)
-              d.ellipse((x-r,y-r,x+r,y+r),fill=colors[i%len(colors)])
+          for i in range(30):
+              x = random.randint(30, W-30)
+              y = random.randint(250, H-150)
+              r = random.randint(15, 55)
+              d.ellipse(
+                  (x-r, y-r, x+r, y+r),
+                  fill=colors[i % len(colors)]
+              )
 
-          center_text(d,"YAPPU TV",100,font_medium,(255,255,255))
-          center_text(d,"CAN YOU FIND IT?",330,font_big,(255,235,80))
-          center_text(d,target,450,font_medium,(255,255,255))
+          brand(d, 60)
+          center_text(
+              d, "CAN YOU FIND IT?", 360,
+              font_big, (255, 235, 80)
+          )
+          center_text(
+              d, target, 500,
+              font_medium, (255, 255, 255)
+          )
+          center_text(
+              d, "LET'S PLAY! 🔍", 1450,
+              font_medium, (120, 240, 255)
+          )
 
           img.save("frames/scene1.png")
 
-          # Scene 2: Puzzle
+          # ---------------- SCENE 2 ----------------
           random.seed(topic)
-          img = Image.new("RGB",(W,H),(245,248,255))
+
+          img = Image.new("RGB", (W, H), (245, 248, 255))
           d = ImageDraw.Draw(img)
 
-          center_text(d,"FIND THE HIDDEN",90,font_medium,(35,45,80))
-          center_text(d,target,170,font_big,(255,80,80))
+          brand(d, 40)
 
-          positions=[]
+          center_text(
+              d, "FIND THE HIDDEN", 190,
+              font_medium, (35, 45, 80)
+          )
+          center_text(
+              d, target, 280,
+              font_big, (255, 80, 100)
+          )
+
+          positions = []
+
           for row in range(5):
               for col in range(4):
-                  x=160+col*250
-                  y=550+row*230
-                  positions.append((x,y))
+                  x = 160 + col * 250
+                  y = 620 + row * 210
+                  positions.append((x, y))
 
-          hidden_index=random.randrange(len(positions))
+          hidden_index = random.randrange(len(positions))
 
-          for i,(x,y) in enumerate(positions):
-              kind = random.choice(["APPLE","BALL","STAR","HEART"])
+          other_objects = ["APPLE", "BALL", "STAR", "HEART"]
+
+          for i, (x, y) in enumerate(positions):
+              kind = random.choice(other_objects)
+
               if i == hidden_index:
                   kind = target
-                  draw_object(d,kind,x,y,65,False)
+                  draw_object(d, kind, x, y, 65, False)
               else:
-                  draw_object(d,kind,x,y,65,True)
+                  draw_object(d, kind, x, y, 65, True)
 
-          center_text(d,"YOU HAVE 10 SECONDS!",1740,font_small,(40,50,90))
+          center_text(
+              d, "YOU HAVE 10 SECONDS!", 1740,
+              font_small, (40, 50, 90)
+          )
+
           img.save("frames/scene2.png")
 
-          # Scene 3: Countdown
-          img = Image.new("RGB",(W,H),(35,25,75))
+          # ---------------- COUNTDOWN ----------------
+          for n in [3, 2, 1]:
+
+              img = Image.new("RGB", (W, H), (35, 25, 75))
+              d = ImageDraw.Draw(img)
+
+              brand(d, 50)
+
+              center_text(
+                  d, "KEEP LOOKING!", 350,
+                  font_medium, (255, 255, 255)
+              )
+
+              center_text(
+                  d, str(n), 700,
+                  font_big, (255, 220, 60)
+              )
+
+              center_text(
+                  d, "🔍", 900,
+                  font_big, (120, 240, 255)
+              )
+
+              img.save(f"frames/count{n}.png")
+
+          # ---------------- REVEAL ----------------
+          img = Image.new("RGB", (W, H), (20, 105, 78))
           d = ImageDraw.Draw(img)
-          center_text(d,"KEEP LOOKING!",260,font_medium,(255,255,255))
 
-          for n in [3,2,1]:
-              img2 = img.copy()
-              dd=ImageDraw.Draw(img2)
-              center_text(dd,str(n),700,font_big,(255,220,60))
-              img2.save(f"frames/count{n}.png")
+          brand(d, 50)
 
-          # Scene 4: Reveal
-          img = Image.new("RGB",(W,H),(20,100,75))
-          d = ImageDraw.Draw(img)
+          center_text(
+              d, "TIME'S UP!", 250,
+              font_big, (255, 255, 255)
+          )
 
-          center_text(d,"TIME'S UP!",180,font_big,(255,255,255))
-          center_text(d,"DID YOU FIND IT?",310,font_medium,(255,235,80))
+          center_text(
+              d, "DID YOU FIND IT?", 390,
+              font_medium, (255, 235, 80)
+          )
 
-          draw_object(d,target,W//2,850,180,False)
+          draw_object(
+              d, target, W//2, 850, 180, False
+          )
 
-          center_text(d,"YES! THERE IT IS!",1200,font_medium,(255,255,255))
-          center_text(d,"GREAT JOB! 🎉",1320,font_big,(255,235,80))
+          center_text(
+              d, "YES! THERE IT IS!", 1200,
+              font_medium, (255, 255, 255)
+          )
 
-          center_text(d,"YAPPU TV",1650,font_medium,(255,255,255))
+          center_text(
+              d, "GREAT JOB! 🎉", 1330,
+              font_big, (255, 235, 80)
+          )
+
+          center_text(
+              d, "PLAY AGAIN!", 1500,
+              font_medium, (120, 240, 255)
+          )
 
           img.save("frames/reveal.png")
           PY
 
-          # Build final vertical video
+          # ---------------- VOICE ----------------
+
+          espeak-ng \
+            -v en-us+f3 \
+            -s 155 \
+            -p 65 \
+            -a 170 \
+            -w audio/voice.wav \
+            "Hey, Yappu TV friends! Can you find the hidden $target? Look carefully! You have ten seconds! Three, two, one! Time's up! Did you find it? Great job!"
+
+          # ---------------- VIDEO ----------------
+
           ffmpeg -y \
             -loop 1 -i frames/scene1.png \
             -loop 1 -i frames/scene2.png \
@@ -203,6 +325,7 @@ jobs:
             -loop 1 -i frames/count2.png \
             -loop 1 -i frames/count1.png \
             -loop 1 -i frames/reveal.png \
+            -i audio/voice.wav \
             -filter_complex "
               [0:v]scale=1080:1920,setsar=1[v0];
               [1:v]scale=1080:1920,setsar=1[v1];
@@ -210,18 +333,29 @@ jobs:
               [3:v]scale=1080:1920,setsar=1[v3];
               [4:v]scale=1080:1920,setsar=1[v4];
               [5:v]scale=1080:1920,setsar=1[v5];
+
               [v0]trim=duration=3,setpts=PTS-STARTPTS[a];
               [v1]trim=duration=10,setpts=PTS-STARTPTS[b];
               [v2]trim=duration=1,setpts=PTS-STARTPTS[c];
               [v3]trim=duration=1,setpts=PTS-STARTPTS[d];
               [v4]trim=duration=1,setpts=PTS-STARTPTS[e];
               [v5]trim=duration=4,setpts=PTS-STARTPTS[f];
-              [a][b][c][d][e][f]concat=n=6:v=1:a=0[outv]
+
+              [a][b][c][d][e][f]
+              concat=n=6:v=1:a=0[outv]
             " \
             -map "[outv]" \
+            -map 6:a \
+            -t 20 \
             -r 30 \
             -c:v libx264 \
+            -preset medium \
+            -crf 20 \
             -pix_fmt yuv420p \
+            -c:a aac \
+            -b:a 128k \
+            -ar 44100 \
+            -ac 2 \
             -movflags +faststart \
             output/yappu-video.mp4
 
