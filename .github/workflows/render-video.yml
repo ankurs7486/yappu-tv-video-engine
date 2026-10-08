@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Create video
         run: |
+         sudo apt-get update
+         sudo apt-get install -y ffmpeg
           mkdir -p output
 
           ffmpeg -y \
