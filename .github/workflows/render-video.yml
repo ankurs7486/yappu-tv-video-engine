@@ -37,14 +37,17 @@ jobs:
       # CHECK LOGO
       # --------------------------------------------------
 
-      - name: Check Yappu TV logo
+      -       - name: Find Yappu TV logo
         run: |
-          if [ ! -f "GitHub Workflow/yappu-logo.png" ]; then
-            echo "ERROR: yappu-logo.png not found"
+          LOGO_PATH=$(find . -type f -name "yappu-logo.png" | head -n 1)
+
+          if [ -z "$LOGO_PATH" ]; then
+            echo "ERROR: yappu-logo.png not found anywhere in repository"
             exit 1
           fi
 
-          echo "Yappu TV logo found."
+          echo "Yappu TV logo found at: $LOGO_PATH"
+          cp "$LOGO_PATH" yappu-logo.png
 
       # --------------------------------------------------
       # CREATE VIDEO
@@ -95,8 +98,7 @@ jobs:
           # COPY LOGO
           # ------------------------------------------------
 
-          cp "GitHub Workflow/yappu-logo.png" frames/yappu-logo.png
-
+          cp yappu-logo.png frames/yappu-logo.png
           # ------------------------------------------------
           # PYTHON ANIMATION ENGINE
           # ------------------------------------------------
