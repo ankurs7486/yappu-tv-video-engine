@@ -7,616 +7,879 @@ on:
         description: "Video topic"
         required: true
         default: "Find the Hidden Apple"
+
       duration:
         description: "Video duration in seconds"
         required: true
         default: "20"
+
+      voice_url:
+        description: "ElevenLabs voice file URL (optional)"
+        required: false
+        default: ""
 
 jobs:
   render:
     runs-on: ubuntu-latest
 
     steps:
+
+      # --------------------------------------------------
+      # INSTALL
+      # --------------------------------------------------
+
       - name: Install tools
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg python3-pil espeak-ng
 
-      - name: Create Yappu TV Creative V2 video
+      # --------------------------------------------------
+      # CHECK LOGO
+      # --------------------------------------------------
+
+      - name: Check Yappu TV logo
+        run: |
+          if [ ! -f "GitHub Workflow/yappu-logo.png" ]; then
+            echo "ERROR: yappu-logo.png not found"
+            exit 1
+          fi
+
+          echo "Yappu TV logo found."
+
+      # --------------------------------------------------
+      # CREATE VIDEO
+      # --------------------------------------------------
+
+      - name: Create Yappu TV Creative V3
         env:
           TOPIC: ${{ inputs.topic }}
           DURATION: ${{ inputs.duration }}
+          VOICE_URL: ${{ inputs.voice_url }}
+
         run: |
+
           mkdir -p output frames audio
 
-          # Detect target object for voice
           T="$TOPIC"
           TL=$(echo "$T" | tr '[:upper:]' '[:lower:]')
 
+          # ------------------------------------------------
+          # TARGET DETECTION
+          # ------------------------------------------------
+
           if [[ "$TL" == *"rainbow"* ]]; then
             TARGET="RAINBOW"
+
           elif [[ "$TL" == *"dino"* || "$TL" == *"dinosaur"* ]]; then
-            TARGET="DINOSAUR"
+            TARGET="DINO"
+
           elif [[ "$TL" == *"pen"* ]]; then
             TARGET="PEN"
+
           elif [[ "$TL" == *"star"* ]]; then
             TARGET="STAR"
+
           elif [[ "$TL" == *"heart"* ]]; then
             TARGET="HEART"
+
           elif [[ "$TL" == *"ball"* ]]; then
             TARGET="BALL"
+
           else
             TARGET="APPLE"
           fi
 
           export TARGET
 
+          # ------------------------------------------------
+          # COPY LOGO
+          # ------------------------------------------------
+
+          cp "GitHub Workflow/yappu-logo.png" frames/yappu-logo.png
+
+          # ------------------------------------------------
+          # PYTHON ANIMATION ENGINE
+          # ------------------------------------------------
+
           python3 <<'PY'
-          from PIL import Image, ImageDraw, ImageFont
-          import os, random, math
+
+          from PIL import Image, ImageDraw, ImageFont, ImageFilter
+          import os
+          import math
+          import random
+
+          W = 1080
+          H = 1920
+          FPS = 30
 
           topic = os.environ.get("TOPIC", "Find the Hidden Apple")
           target = os.environ.get("TARGET", "APPLE")
 
-          W, H = 1080, 1920
+          random.seed(topic)
 
-          font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+          FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
           try:
-              font_huge = ImageFont.truetype(font_path, 125)
-              font_big = ImageFont.truetype(font_path, 88)
-              font_medium = ImageFont.truetype(font_path, 58)
-              font_small = ImageFont.truetype(font_path, 42)
-              font_brand = ImageFont.truetype(font_path, 58)
+              f_title = ImageFont.truetype(FONT, 90)
+              f_big = ImageFont.truetype(FONT, 150)
+              f_medium = ImageFont.truetype(FONT, 62)
+              f_small = ImageFont.truetype(FONT, 44)
           except:
-              font_huge = font_big = font_medium = font_small = font_brand = ImageFont.load_default()
+              f_title = f_big = f_medium = f_small = ImageFont.load_default()
 
-          COLORS = [
-              (255, 92, 130),
-              (75, 160, 255),
-              (255, 205, 65),
-              (75, 210, 175),
-              (170, 105, 255),
-              (255, 145, 75)
-          ]
+          LOGO = Image.open("frames/yappu-logo.png").convert("RGBA")
 
-          def center_text(draw, text, y, font, fill):
-              box = draw.textbbox((0,0), text, font=font)
+          # Resize logo
+          logo_w = 250
+          ratio = logo_w / LOGO.width
+          logo_h = int(LOGO.height * ratio)
+          LOGO = LOGO.resize((logo_w, logo_h), Image.Resampling.LANCZOS)
+
+          # ------------------------------------------------
+          # HELPERS
+          # ------------------------------------------------
+
+          def rounded_text(img, text, y, font, fill):
+
+              d = ImageDraw.Draw(img)
+
+              box = d.textbbox((0,0), text, font=font)
               tw = box[2] - box[0]
+              th = box[3] - box[1]
+
               x = (W - tw) // 2
 
-              draw.text(
-                  (x+4, y+5),
+              # shadow
+              d.text(
+                  (x+5, y+6),
                   text,
                   font=font,
-                  fill=(20,20,40)
+                  fill=(20,20,45)
               )
 
-              draw.text(
-                  (x, y),
+              d.text(
+                  (x,y),
                   text,
                   font=font,
                   fill=fill
               )
 
-          def brand(draw):
-              # Stylish rounded Yappu TV badge
-              draw.rounded_rectangle(
-                  (285, 45, 795, 145),
-                  radius=45,
-                  fill=(255,255,255),
-                  outline=(255,100,160),
-                  width=7
+          def paste_logo(img, scale=1.0):
+
+              lw = int(LOGO.width * scale)
+              lh = int(LOGO.height * scale)
+
+              logo = LOGO.resize(
+                  (lw,lh),
+                  Image.Resampling.LANCZOS
               )
 
-              box = draw.textbbox((0,0), "YAPPU TV", font=font_brand)
-              tw = box[2]-box[0]
+              x = (W-lw)//2
+              y = 35
 
-              draw.text(
-                  ((W-tw)//2, 60),
-                  "YAPPU TV",
-                  font=font_brand,
-                  fill=(255,85,145)
+              img.alpha_composite(
+                  logo,
+                  (x,y)
               )
 
-          def sparkles(draw, count=35):
-              for i in range(count):
-                  x = random.randint(30, W-30)
-                  y = random.randint(180, H-100)
-                  r = random.randint(3, 11)
-                  c = COLORS[i % len(COLORS)]
-                  draw.ellipse(
-                      (x-r, y-r, x+r, y+r),
-                      fill=c
-                  )
+          def circle_object(kind, size=70):
 
-          def draw_object(draw, kind, x, y, size, muted=False):
+              s = size
+              obj = Image.new(
+                  "RGBA",
+                  (s*3,s*3),
+                  (0,0,0,0)
+              )
+
+              d = ImageDraw.Draw(obj)
+
+              cx = s*1.5
+              cy = s*1.5
+
               if kind == "APPLE":
-                  c = (210,210,215) if muted else (235,45,60)
 
-                  draw.ellipse(
-                      (x-size,y-size,x,y),
-                      fill=c
+                  d.ellipse(
+                      (cx-s,cy-s,cx,cy),
+                      fill=(238,45,65)
                   )
 
-                  draw.ellipse(
-                      (x,y-size,x+size,y),
-                      fill=c
+                  d.ellipse(
+                      (cx,cy-s,cx+s,cy),
+                      fill=(238,45,65)
                   )
 
-                  draw.rectangle(
-                      (x-5,y-size-32,x+5,y-size+5),
-                      fill=(100,60,30)
+                  d.rectangle(
+                      (cx-5,cy-s-25,cx+5,cy-s+5),
+                      fill=(100,55,25)
                   )
 
-                  draw.ellipse(
-                      (x+5,y-size-38,x+48,y-size-8),
-                      fill=(45,180,80)
+                  d.ellipse(
+                      (cx+5,cy-s-30,cx+40,cy-s),
+                      fill=(55,190,90)
                   )
 
               elif kind == "BALL":
-                  c = (210,210,215) if muted else (40,125,255)
-                  draw.ellipse(
-                      (x-size,y-size,x+size,y+size),
-                      fill=c
+
+                  d.ellipse(
+                      (cx-s,cy-s,cx+s,cy+s),
+                      fill=(50,130,245)
                   )
 
-                  draw.arc(
-                      (x-size//2,y-size//2,
-                       x+size//2,y+size//2),
+                  d.arc(
+                      (cx-s//2,cy-s//2,
+                       cx+s//2,cy+s//2),
                       0,360,
-                      fill=(255,255,255),
-                      width=7
+                      fill="white",
+                      width=8
                   )
 
               elif kind == "STAR":
-                  c = (210,210,215) if muted else (255,205,30)
 
                   pts=[]
 
                   for i in range(10):
+
                       a = -math.pi/2 + i*math.pi/5
-                      r = size if i%2==0 else size*0.45
+
+                      r = s if i%2==0 else s*0.45
+
                       pts.append(
                           (
-                              x+math.cos(a)*r,
-                              y+math.sin(a)*r
+                              cx+math.cos(a)*r,
+                              cy+math.sin(a)*r
                           )
                       )
 
-                  draw.polygon(pts, fill=c)
+                  d.polygon(
+                      pts,
+                      fill=(255,210,45)
+                  )
 
               elif kind == "HEART":
-                  c = (210,210,215) if muted else (245,45,90)
 
-                  draw.ellipse(
-                      (x-size,y-size//2,x,y+size),
-                      fill=c
+                  d.ellipse(
+                      (cx-s,cy-s//2,cx,cy+s),
+                      fill=(250,55,100)
                   )
 
-                  draw.ellipse(
-                      (x,y-size//2,x+size,y+size),
-                      fill=c
+                  d.ellipse(
+                      (cx,cy-s//2,cx+s,cy+s),
+                      fill=(250,55,100)
                   )
 
-                  draw.polygon(
+                  d.polygon(
                       [
-                          (x-size+5,y),
-                          (x+size-5,y),
-                          (x,y+size+size//2)
+                          (cx-s+5,cy),
+                          (cx+s-5,cy),
+                          (cx,cy+s+s//2)
                       ],
-                      fill=c
+                      fill=(250,55,100)
                   )
 
               elif kind == "PEN":
-                  c = (210,210,215) if muted else (40,90,220)
 
-                  draw.rounded_rectangle(
+                  d.rounded_rectangle(
                       (
-                          x-size//4,
-                          y-size,
-                          x+size//4,
-                          y+size
+                          cx-s//4,
+                          cy-s,
+                          cx+s//4,
+                          cy+s
                       ),
-                      radius=20,
-                      fill=c
+                      radius=15,
+                      fill=(50,100,230)
                   )
 
-                  draw.polygon(
+                  d.polygon(
                       [
-                          (x-size//4,y+size),
-                          (x+size//4,y+size),
-                          (x,y+size+55)
+                          (cx-s//4,cy+s),
+                          (cx+s//4,cy+s),
+                          (cx,cy+s+45)
                       ],
-                      fill=c
+                      fill=(70,70,80)
                   )
 
               elif kind == "DINO":
-                  c = (210,210,215) if muted else (55,190,100)
 
-                  draw.ellipse(
+                  d.ellipse(
                       (
-                          x-size,
-                          y-size//2,
-                          x+size,
-                          y+size//2
+                          cx-s,
+                          cy-s//2,
+                          cx+s,
+                          cy+s//2
                       ),
-                      fill=c
+                      fill=(65,195,100)
                   )
 
-                  draw.ellipse(
+                  d.ellipse(
                       (
-                          x+size//2,
-                          y-size,
-                          x+size*1.25,
-                          y-size//3
+                          cx+s//2,
+                          cy-s,
+                          cx+s*1.2,
+                          cy-s//3
                       ),
-                      fill=c
+                      fill=(65,195,100)
                   )
 
-                  draw.polygon(
-                      [
-                          (x-size,y),
-                          (x-size-85,y-size//2),
-                          (x-size-60,y+45)
-                      ],
-                      fill=c
+                  # eye
+                  d.ellipse(
+                      (
+                          cx+s*0.85,
+                          cy-s*0.75,
+                          cx+s*0.98,
+                          cy-s*0.62
+                      ),
+                      fill="white"
                   )
 
-              elif kind == "RAINBOW":
-                  rainbow = [
-                      (255,60,60),
-                      (255,150,40),
-                      (255,220,50),
-                      (70,190,90),
-                      (60,130,240),
-                      (150,80,220)
-                  ]
+              return obj
 
-                  width = size//4
-
-                  for i,c in enumerate(rainbow):
-                      r = size-i*width//2
-
-                      draw.arc(
-                          (
-                              x-r,
-                              y-r,
-                              x+r,
-                              y+r
-                          ),
-                          180,
-                          360,
-                          fill=c,
-                          width=width
-                      )
-
-          # ---------------- HOOK ----------------
-
-          random.seed(42)
-
-          img = Image.new(
-              "RGB",
-              (W,H),
-              (38,25,88)
-          )
-
-          d = ImageDraw.Draw(img)
-
-          sparkles(d,55)
-          brand(d)
-
-          center_text(
-              d,
-              "CAN YOU FIND IT?",
-              360,
-              font_big,
-              (255,235,80)
-          )
-
-          center_text(
-              d,
-              target,
-              500,
-              font_huge,
-              (255,255,255)
-          )
-
-          center_text(
-              d,
-              "LET'S PLAY!",
-              1500,
-              font_medium,
-              (100,235,255)
-          )
-
-          img.save("frames/scene1.png")
-
-          # ---------------- PUZZLE ----------------
-
-          random.seed(topic)
-
-          img = Image.new(
-              "RGB",
-              (W,H),
-              (246,249,255)
-          )
-
-          d = ImageDraw.Draw(img)
-
-          brand(d)
-
-          center_text(
-              d,
-              "FIND THE HIDDEN",
-              190,
-              font_medium,
-              (35,45,80)
-          )
-
-          center_text(
-              d,
-              target,
-              280,
-              font_big,
-              (255,75,100)
-          )
+          # ------------------------------------------------
+          # PUZZLE POSITIONS
+          # ------------------------------------------------
 
           positions=[]
 
           for row in range(5):
+
               for col in range(4):
+
                   positions.append(
                       (
-                          160+col*250,
-                          620+row*210
+                          155 + col*255,
+                          600 + row*210
                       )
                   )
 
-          hidden_index = random.randrange(len(positions))
+          hidden_index = random.randrange(
+              len(positions)
+          )
 
           allowed = [
               "APPLE",
               "BALL",
               "STAR",
-              "HEART"
+              "HEART",
+              "DINO",
+              "PEN"
           ]
 
-          for i,(x,y) in enumerate(positions):
+          # ------------------------------------------------
+          # TOTAL FRAMES
+          # ------------------------------------------------
 
-              kind = random.choice(allowed)
+          total_frames = 600
 
-              if i == hidden_index:
-                  kind = target
+          for frame in range(total_frames):
 
-              draw_object(
-                  d,
-                  kind,
-                  x,
-                  y,
-                  65,
-                  i != hidden_index
-              )
+              t = frame / FPS
 
-          center_text(
-              d,
-              "10 SECONDS!",
-              1740,
-              font_small,
-              (45,55,95)
-          )
+              # --------------------------------------------
+              # BACKGROUND
+              # --------------------------------------------
 
-          img.save("frames/scene2.png")
+              if t < 3:
 
-          # ---------------- COUNTDOWN ----------------
+                  # HOOK
 
-          for n in [3,2,1]:
+                  bg = (
+                      35,
+                      22,
+                      85
+                  )
+
+              elif t < 13:
+
+                  # PUZZLE
+
+                  bg = (
+                      245,
+                      249,
+                      255
+                  )
+
+              elif t < 16:
+
+                  # COUNTDOWN
+
+                  bg = (
+                      38,
+                      24,
+                      82
+                  )
+
+              else:
+
+                  # REVEAL
+
+                  bg = (
+                      25,
+                      110,
+                      82
+                  )
 
               img = Image.new(
-                  "RGB",
+                  "RGBA",
                   (W,H),
-                  (35,25,78)
+                  bg+(255,)
               )
 
               d = ImageDraw.Draw(img)
 
-              sparkles(d,40)
-              brand(d)
+              # --------------------------------------------
+              # LOGO
+              # --------------------------------------------
 
-              center_text(
-                  d,
-                  "KEEP LOOKING!",
-                  350,
-                  font_medium,
-                  (255,255,255)
+              paste_logo(img)
+
+              # --------------------------------------------
+              # HOOK 0-3
+              # --------------------------------------------
+
+              if t < 3:
+
+                  pulse = 1 + 0.08 * math.sin(t*8)
+
+                  rounded_text(
+                      img,
+                      "CAN YOU",
+                      390,
+                      f_title,
+                      (255,235,70)
+                  )
+
+                  rounded_text(
+                      img,
+                      "FIND IT?",
+                      500,
+                      f_title,
+                      (255,255,255)
+                  )
+
+                  obj = circle_object(
+                      target,
+                      90
+                  )
+
+                  obj = obj.resize(
+                      (
+                          int(obj.width*pulse),
+                          int(obj.height*pulse)
+                      )
+                  )
+
+                  x = (W-obj.width)//2
+
+                  y = 760 + int(
+                      math.sin(t*6)*20
+                  )
+
+                  img.alpha_composite(
+                      obj,
+                      (x,y)
+                  )
+
+                  rounded_text(
+                      img,
+                      "GET READY!",
+                      1370,
+                      f_medium,
+                      (100,235,255)
+                  )
+
+              # --------------------------------------------
+              # PUZZLE 3-13
+              # --------------------------------------------
+
+              elif t < 13:
+
+                  rounded_text(
+                      img,
+                      "FIND THE HIDDEN",
+                      205,
+                      f_medium,
+                      (35,45,80)
+                  )
+
+                  rounded_text(
+                      img,
+                      target,
+                      285,
+                      f_title,
+                      (245,70,100)
+                  )
+
+                  elapsed = t - 3
+
+                  for i,(x,y) in enumerate(
+                      positions
+                  ):
+
+                      kind = random.choice(
+                          allowed
+                      )
+
+                      if i == hidden_index:
+                          kind = target
+
+                      # gentle movement
+                      dx = int(
+                          math.sin(
+                              elapsed*2+i
+                          )*8
+                      )
+
+                      dy = int(
+                          math.cos(
+                              elapsed*2.3+i
+                          )*7
+                      )
+
+                      scale = 0.92 + 0.08 * math.sin(
+                          elapsed*3+i
+                      )
+
+                      obj = circle_object(
+                          kind,
+                          55
+                      )
+
+                      obj = obj.resize(
+                          (
+                              int(obj.width*scale),
+                              int(obj.height*scale)
+                          )
+                      )
+
+                      ox = x + dx - obj.width//2
+                      oy = y + dy - obj.height//2
+
+                      img.alpha_composite(
+                          obj,
+                          (ox,oy)
+                      )
+
+                  # animated timer
+
+                  remaining = max(
+                      1,
+                      10-int(elapsed)
+                  )
+
+                  rounded_text(
+                      img,
+                      f"{remaining}",
+                      1660,
+                      f_big,
+                      (255,80,105)
+                  )
+
+                  rounded_text(
+                      img,
+                      "SECONDS!",
+                      1820,
+                      f_small,
+                      (40,55,90)
+                  )
+
+              # --------------------------------------------
+              # COUNTDOWN 13-16
+              # --------------------------------------------
+
+              elif t < 16:
+
+                  cd = 3 - int(t-13)
+
+                  local = (t-13) % 1
+
+                  scale = 1.0 + 0.25 * (
+                      1-local
+                  )
+
+                  rounded_text(
+                      img,
+                      "TIME!",
+                      370,
+                      f_title,
+                      (255,255,255)
+                  )
+
+                  obj = Image.new(
+                      "RGBA",
+                      (500,500),
+                      (0,0,0,0)
+                  )
+
+                  od = ImageDraw.Draw(obj)
+
+                  od.ellipse(
+                      (50,50,450,450),
+                      fill=(255,205,55)
+                  )
+
+                  txt = str(cd)
+
+                  box = od.textbbox(
+                      (0,0),
+                      txt,
+                      font=f_big
+                  )
+
+                  tw = box[2]-box[0]
+                  th = box[3]-box[1]
+
+                  od.text(
+                      (
+                          250-tw//2,
+                          250-th//2-15
+                      ),
+                      txt,
+                      font=f_big,
+                      fill=(45,35,80)
+                  )
+
+                  obj = obj.resize(
+                      (
+                          int(500*scale),
+                          int(500*scale)
+                      )
+                  )
+
+                  img.alpha_composite(
+                      obj,
+                      (
+                          (W-obj.width)//2,
+                          650-(obj.height-500)//2
+                      )
+                  )
+
+                  rounded_text(
+                      img,
+                      "DID YOU FIND IT?",
+                      1300,
+                      f_medium,
+                      (100,235,255)
+                  )
+
+              # --------------------------------------------
+              # REVEAL 16-20
+              # --------------------------------------------
+
+              else:
+
+                  local = t-16
+
+                  flash = max(
+                      0,
+                      1-local*2
+                  )
+
+                  # confetti
+                  for i in range(45):
+
+                      random.seed(
+                          i*17
+                      )
+
+                      cx = (
+                          random.randint(
+                              30,
+                              W-30
+                          )
+                          + int(
+                              local*(
+                                  random.randint(
+                                      -100,
+                                      100
+                                  )
+                              )
+                          )
+                      )
+
+                      cy = (
+                          random.randint(
+                              300,
+                              1750
+                          )
+                          + int(
+                              local*300
+                          )
+                      )
+
+                      r = random.randint(
+                          5,
+                          13
+                      )
+
+                      d.ellipse(
+                          (
+                              cx-r,
+                              cy-r,
+                              cx+r,
+                              cy+r
+                          ),
+                          fill=random.choice(
+                              [
+                                  (255,80,110),
+                                  (255,215,50),
+                                  (70,190,255),
+                                  (90,220,150),
+                                  (170,100,255)
+                              ]
+                          )
+                      )
+
+                  rounded_text(
+                      img,
+                      "TIME'S UP!",
+                      300,
+                      f_title,
+                      (255,255,255)
+                  )
+
+                  rounded_text(
+                      img,
+                      "HERE IT IS!",
+                      430,
+                      f_medium,
+                      (255,235,70)
+                  )
+
+                  pulse = 1 + 0.15 * math.sin(
+                      local*8
+                  )
+
+                  obj = circle_object(
+                      target,
+                      120
+                  )
+
+                  obj = obj.resize(
+                      (
+                          int(obj.width*pulse),
+                          int(obj.height*pulse)
+                      )
+                  )
+
+                  # glow
+                  glow = Image.new(
+                      "RGBA",
+                      img.size,
+                      (0,0,0,0)
+                  )
+
+                  gd = ImageDraw.Draw(
+                      glow
+                  )
+
+                  gd.ellipse(
+                      (
+                          270,
+                          650,
+                          810,
+                          1190
+                      ),
+                      fill=(255,240,80,100)
+                  )
+
+                  glow = glow.filter(
+                      ImageFilter.GaussianBlur(
+                          35
+                      )
+                  )
+
+                  img.alpha_composite(
+                      glow
+                  )
+
+                  img.alpha_composite(
+                      obj,
+                      (
+                          (W-obj.width)//2,
+                          700
+                      )
+                  )
+
+                  rounded_text(
+                      img,
+                      "GREAT JOB!",
+                      1280,
+                      f_title,
+                      (255,235,70)
+                  )
+
+                  rounded_text(
+                      img,
+                      "PLAY AGAIN!",
+                      1450,
+                      f_medium,
+                      (100,235,255)
+                  )
+
+              # --------------------------------------------
+              # SAVE FRAME
+              # --------------------------------------------
+
+              img.convert("RGB").save(
+                  f"frames/frame_{frame:05d}.jpg",
+                  quality=92
               )
 
-              center_text(
-                  d,
-                  str(n),
-                  650,
-                  font_huge,
-                  (255,220,55)
-              )
+          print("600 animated frames created.")
 
-              center_text(
-                  d,
-                  "GO!",
-                  930,
-                  font_medium,
-                  (100,235,255)
-              )
-
-              img.save(
-                  f"frames/count{n}.png"
-              )
-
-          # ---------------- REVEAL ----------------
-
-          img = Image.new(
-              "RGB",
-              (W,H),
-              (20,105,78)
-          )
-
-          d = ImageDraw.Draw(img)
-
-          sparkles(d,60)
-          brand(d)
-
-          center_text(
-              d,
-              "TIME'S UP!",
-              250,
-              font_big,
-              (255,255,255)
-          )
-
-          center_text(
-              d,
-              "DID YOU FIND IT?",
-              390,
-              font_medium,
-              (255,235,70)
-          )
-
-          draw_object(
-              d,
-              target,
-              W//2,
-              850,
-              190,
-              False
-          )
-
-          center_text(
-              d,
-              "YES! THERE IT IS!",
-              1200,
-              font_medium,
-              (255,255,255)
-          )
-
-          center_text(
-              d,
-              "GREAT JOB!",
-              1340,
-              font_big,
-              (255,235,70)
-          )
-
-          center_text(
-              d,
-              "PLAY AGAIN!",
-              1510,
-              font_medium,
-              (100,235,255)
-          )
-
-          img.save("frames/reveal.png")
           PY
 
-          # ---------------- VOICE ----------------
+      # --------------------------------------------------
+      # VOICE
+      # --------------------------------------------------
 
-          espeak-ng \
-            -v en-us+f3 \
-            -s 155 \
-            -p 65 \
-            -a 170 \
-            -w audio/voice.wav \
-            "Hey Yappu TV friends! Can you find the hidden $TARGET? Look carefully! You have ten seconds! Three... two... one... Time's up! Did you find it? Great job!"
+      - name: Prepare voice
+        env:
+          VOICE_URL: ${{ inputs.voice_url }}
+        run: |
 
-          # ---------------- CREATIVE ANIMATION ----------------
+          if [ -n "$VOICE_URL" ]; then
+
+            echo "Downloading ElevenLabs voice..."
+
+            curl -L \
+              "$VOICE_URL" \
+              -o audio/voice.mp3
+
+            ffmpeg -y \
+              -i audio/voice.mp3 \
+              -ar 44100 \
+              -ac 2 \
+              audio/voice.wav
+
+          else
+
+            echo "No ElevenLabs voice supplied."
+            echo "Using temporary fallback voice."
+
+            espeak-ng \
+              -v en-us+f3 \
+              -s 155 \
+              -p 65 \
+              -a 170 \
+              -w audio/voice.wav \
+              "Hey Yappu TV friends! Can you find the hidden $TARGET? Look carefully! You have ten seconds! Three, two, one! Time's up! Did you find it? Great job!"
+
+          fi
+
+      # --------------------------------------------------
+      # FINAL VIDEO
+      # --------------------------------------------------
+
+      - name: Render final MP4
+        run: |
 
           ffmpeg -y \
-            -loop 1 -i frames/scene1.png \
-            -loop 1 -i frames/scene2.png \
-            -loop 1 -i frames/count3.png \
-            -loop 1 -i frames/count2.png \
-            -loop 1 -i frames/count1.png \
-            -loop 1 -i frames/reveal.png \
+            -framerate 30 \
+            -i frames/frame_%05d.jpg \
             -i audio/voice.wav \
-            -filter_complex "
-
-              [0:v]
-              scale=1080:1920,
-              zoompan=
-              z='min(zoom+0.0008,1.08)':
-              x='iw/2-(iw/zoom/2)':
-              y='ih/2-(ih/zoom/2)':
-              d=90:
-              s=1080x1920:
-              fps=30,
-              trim=duration=3,
-              setpts=PTS-STARTPTS[v0];
-
-              [1:v]
-              scale=1080:1920,
-              zoompan=
-              z='1.0+0.04*sin(on/18)':
-              x='iw/2-(iw/zoom/2)':
-              y='ih/2-(ih/zoom/2)':
-              d=300:
-              s=1080x1920:
-              fps=30,
-              trim=duration=10,
-              setpts=PTS-STARTPTS[v1];
-
-              [2:v]
-              scale=1080:1920,
-              zoompan=
-              z='1.0+0.10*sin(on/8)':
-              x='iw/2-(iw/zoom/2)':
-              y='ih/2-(ih/zoom/2)':
-              d=30:
-              s=1080x1920:
-              fps=30,
-              trim=duration=1,
-              setpts=PTS-STARTPTS[v2];
-
-              [3:v]
-              scale=1080:1920,
-              zoompan=
-              z='1.0+0.10*sin(on/8)':
-              x='iw/2-(iw/zoom/2)':
-              y='ih/2-(ih/zoom/2)':
-              d=30:
-              s=1080x1920:
-              fps=30,
-              trim=duration=1,
-              setpts=PTS-STARTPTS[v3];
-
-              [4:v]
-              scale=1080:1920,
-              zoompan=
-              z='1.0+0.10*sin(on/8)':
-              x='iw/2-(iw/zoom/2)':
-              y='ih/2-(ih/zoom/2)':
-              d=30:
-              s=1080x1920:
-              fps=30,
-              trim=duration=1,
-              setpts=PTS-STARTPTS[v4];
-
-              [5:v]
-              scale=1080:1920,
-              zoompan=
-              z='1.0+0.12*sin(on/12)':
-              x='iw/2-(iw/zoom/2)':
-              y='ih/2-(ih/zoom/2)':
-              d=120:
-              s=1080x1920:
-              fps=30,
-              trim=duration=4,
-              setpts=PTS-STARTPTS[v5];
-
-              [v0][v1][v2][v3][v4][v5]
-              concat=n=6:v=1:a=0[outv]
-            " \
-            -map "[outv]" \
-            -map 6:a \
+            -map 0:v \
+            -map 1:a \
             -t 20 \
-            -r 30 \
             -c:v libx264 \
             -preset medium \
             -crf 20 \
@@ -628,8 +891,13 @@ jobs:
             -movflags +faststart \
             output/yappu-video.mp4
 
+      # --------------------------------------------------
+      # UPLOAD
+      # --------------------------------------------------
+
       - name: Upload video artifact
         uses: actions/upload-artifact@v4
+
         with:
-          name: yappu-tv-video
+          name: yappu-tv-video-v3
           path: output/yappu-video.mp4
