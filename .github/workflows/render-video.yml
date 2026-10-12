@@ -43,8 +43,7 @@ jobs:
           fi
 
           echo "Yappu TV logo found at: $LOGO_PATH"
-          cp "$LOGO_PATH" yappu-logo.png
-
+          
       - name: Create animated video frames
         env:
           TOPIC: ${{ inputs.topic }}
